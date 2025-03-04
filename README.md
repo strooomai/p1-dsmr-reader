@@ -5,7 +5,8 @@ This project is a **DSMR P1 smart meter reader** that works on **Raspberry Pi an
 
 ## Features
 - Reads **DSMR P1 telegrams** from smart meters.
-- Supports **Raspberry Pi (wiringPi)** and **Windows (MinGW/MSVC)**.
+- Uses **pigpio** for GPIO handling on Raspberry Pi.
+- Supports **Raspberry Pi (pigpio)** and **Windows (MinGW/MSVC)**.
 - Parses power consumption, voltage, and current values.
 - Validates messages using **CRC16 checksum**.
 - Modular **GPIO handling** for different platforms.
@@ -14,7 +15,7 @@ This project is a **DSMR P1 smart meter reader** that works on **Raspberry Pi an
 ## Supported Platforms
 | Platform | Serial Support | GPIO Support |
 |----------|---------------|--------------|
-| **Raspberry Pi** | ✅ `/dev/ttyUSB0` | ✅ `wiringPi` |
+| **Raspberry Pi** | ✅ `/dev/ttyUSB0` | ✅ `pigpio` |
 | **Windows (MSYS2/MinGW)** | ✅ `COMx` | ❌ (Disabled) |
 | **Linux** | ✅ `/dev/ttyUSB0` | ✅ `/sys/class/gpio` |
 | **ESP32 (Planned)** | ✅ UART | ✅ `driver/gpio.h` |
@@ -23,40 +24,51 @@ This project is a **DSMR P1 smart meter reader** that works on **Raspberry Pi an
 ### **For Raspberry Pi**
 ```sh
 sudo apt update
-sudo apt install -y build-essential wiringpi
+sudo apt install -y pigpio
 ```
 
-### **For Windows (MSYS2/MinGW)**
-1. Download and install **MSYS2** from [https://www.msys2.org/](https://www.msys2.org/).
-2. Open **MSYS2 MinGW 64-bit** terminal.
-3. Install dependencies:
+## Cross-Compilation for Raspberry Pi
+To cross-compile on Ubuntu for Raspberry Pi, follow these steps:
+
+1. Install the **Raspberry Pi cross-compiler**:
    ```sh
-   pacman -S mingw-w64-x86_64-gcc mingw-w64-x86_64-make
+   sudo apt update
+   sudo apt install -y gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf
    ```
 
-## Compilation
-### **For Raspberry Pi**
-```sh
-make
-sudo ./dsmr_reader
-```
+2. Clone and cross-compile **pigpio**:
+   ```sh
+   git clone https://github.com/joan2937/pigpio.git
+   cd pigpio
+   make clean
+   make CROSS_PREFIX=arm-linux-gnueabihf-
+   ```
 
-### **For Windows (MinGW)**
-```sh
-mingw32-make
-./dsmr_reader.exe
-```
+3. Copy the built libraries for cross-compilation:
+   ```sh
+   mkdir -p ~/pigpio-cross/lib ~/pigpio-cross/include
+   cp libpigpio.so ~/pigpio-cross/lib/
+   cp -r pigpio.h ~/pigpio-cross/include/
+   ```
 
-### **For Cross-Compiling (Raspberry Pi from Windows)**
-1. Install the **Raspberry Pi Toolchain**.
-2. Modify **Makefile**:
+4. Modify the Makefile to use cross-compiled pigpio:
    ```make
-   CC = arm-linux-gnueabihf-gcc
+   CFLAGS = -Wall -Wextra -O2 -DPLATFORM_RPI -I$(HOME)/pigpio-cross/include
+   LDFLAGS = -L$(HOME)/pigpio-cross/lib -lpigpio
    ```
-3. Compile:
+
+5. Compile the project:
    ```sh
+   make clean
    make
+   ```
+
+6. Transfer the binary to Raspberry Pi:
+   ```sh
    scp dsmr_reader pi@raspberrypi:/home/pi/
+   ssh pi@raspberrypi
+   chmod +x dsmr_reader
+   sudo ./dsmr_reader
    ```
 
 ## Usage

@@ -1,11 +1,14 @@
-/* Makefile for DSMR P1 Reader on Raspberry Pi */
+# Makefile for DSMR P1 Reader Cross-Compilation with pigpio
 
-CC = gcc
-CFLAGS = -Wall -Wextra -O2 -DPLATFORM_RPI
-LDFLAGS = -lwiringPi
+CROSS_COMPILE = arm-linux-gnueabihf-
+CC = $(CROSS_COMPILE)gcc
+CXX = $(CROSS_COMPILE)g++
+CFLAGS = -Wall -Wextra -O2 -DPLATFORM_RPI -I$(HOME)/pigpio-cross/include
+LDFLAGS = -L$(HOME)/pigpio-cross/lib -lpigpio
+
 TARGET = dsmr_reader
 
-SRCS = main.c serial.c dsmr_parser.c crc16.c gpio_control_rpi.c
+SRCS = main.c serial.c dsmr_parser.c crc16.c gpio_control.c
 OBJS = $(SRCS:.c=.o)
 
 all: $(TARGET)
