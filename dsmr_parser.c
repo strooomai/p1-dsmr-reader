@@ -29,23 +29,37 @@ int parse_dsmr_message(const char *raw_data, DSMRData *data) {
         return -2; // CRC mismatch, invalid message
     }
 
-    // Parsing all DSMR fields
+    // Define DSMR v5 OBIS codes and map them to structure fields
     char *fields[] = {
-        "0-0:1.0.0(", "1-0:1.7.0(", "1-0:2.7.0(", "1-0:32.7.0(",
-        "1-0:52.7.0(", "1-0:72.7.0(", "1-0:31.7.0(", "1-0:51.7.0(", "1-0:71.7.0(",
-        "1-0:1.8.0(", "1-0:2.8.0(", "0-0:96.7.21(", "0-0:96.7.9(", "1-0:32.32.0(", "1-0:32.36.0("
+        "0-0:1.0.0(", "1-0:1.8.0(", "1-0:2.8.0(", "1-0:1.8.1(", "1-0:1.8.2(",
+        "1-0:2.8.1(", "1-0:2.8.2(", "1-0:1.7.0(", "1-0:2.7.0(", 
+        "0-0:96.7.9(", "0-0:96.7.21(", "1-0:32.32.0(", "1-0:52.32.0(", "1-0:72.32.0(",
+        "1-0:32.36.0(", "1-0:52.36.0(", "1-0:72.36.0(", 
+        "1-0:32.7.0(", "1-0:52.7.0(", "1-0:72.7.0(", 
+        "1-0:31.7.0(", "1-0:51.7.0(", "1-0:71.7.0(", 
+        "1-0:21.7.0(", "1-0:41.7.0(", "1-0:61.7.0(", 
+        "1-0:22.7.0(", "1-0:42.7.0(", "1-0:62.7.0(", 
+        "0-1:96.1.0(", "0-1:24.2.1("
     };
+
     void *data_fields[] = {
-        data->timestamp, &data->power_delivered, &data->power_returned,
-        &data->voltage_l1, &data->voltage_l2, &data->voltage_l3,
-        &data->current_l1, &data->current_l2, &data->current_l3,
-        &data->energy_delivered_total, &data->energy_returned_total,
-        &data->electricity_failures, &data->electricity_long_failures,
-        &data->electricity_sags_l1, &data->electricity_swells_l1
+        data->timestamp, &data->electricity_imported_total, &data->electricity_exported_total,
+        &data->electricity_used_tariff_1, &data->electricity_used_tariff_2,
+        &data->electricity_delivered_tariff_1, &data->electricity_delivered_tariff_2,
+        &data->current_electricity_usage, &data->current_electricity_delivery,
+        &data->long_power_failure_count, &data->short_power_failure_count,
+        &data->voltage_sag_l1_count, &data->voltage_sag_l2_count, &data->voltage_sag_l3_count,
+        &data->voltage_swell_l1_count, &data->voltage_swell_l2_count, &data->voltage_swell_l3_count,
+        &data->instantaneous_voltage_l1, &data->instantaneous_voltage_l2, &data->instantaneous_voltage_l3,
+        &data->instantaneous_current_l1, &data->instantaneous_current_l2, &data->instantaneous_current_l3,
+        &data->instantaneous_active_power_l1_positive, &data->instantaneous_active_power_l2_positive, &data->instantaneous_active_power_l3_positive,
+        &data->instantaneous_active_power_l1_negative, &data->instantaneous_active_power_l2_negative, &data->instantaneous_active_power_l3_negative,
+        data->equipment_identifier_gas, &data->hourly_gas_meter_reading
     };
+
     char *formats[] = {
-        "%15[^)]", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*",
-        "%d", "%d", "%d", "%d"
+        "%15[^)]", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%d", "%d", "%d", "%d", "%d", "%d", "%d", "%d",
+        "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%f*", "%31[^)]", "%f*"
     };
 
     for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
