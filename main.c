@@ -1,66 +1,135 @@
-/* main.c - DSMR P1 Reader Main Program for Raspberry Pi */
 #include "serial.h"
 #include "dsmr_parser.h"
 #include "gpio_control.h"
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
 
 #define BUFFER_SIZE 2048
 
+// Buffer for accumulating incoming serial data.
+static char telegram_buffer[BUFFER_SIZE];
+static size_t buffer_index = 0;
+
+/**
+ * Append new serial data to the telegram buffer.
+ * Returns 1 if a complete telegram is available, 0 otherwise.
+ */
+int accumulate_telegram(int serial_fd) {
+    char temp[256];
+    int bytes_read = serial_read(serial_fd, temp, sizeof(temp) - 1);
+    if (bytes_read > 0) {
+        // Prevent buffer overflow.
+        if (buffer_index + bytes_read < BUFFER_SIZE) {
+            memcpy(telegram_buffer + buffer_index, temp, bytes_read);
+            buffer_index += bytes_read;
+            telegram_buffer[buffer_index] = '\0';
+        } else {
+            fprintf(stderr, "Buffer overflow, resetting telegram buffer.\n");
+            buffer_index = 0;
+            telegram_buffer[0] = '\0';
+            return 0;
+        }
+    }
+    
+    // Check for a complete telegram:
+    // It should start with '/' and contain a '!' followed by at least 4 hex digits.
+    char *start = strchr(telegram_buffer, '/');
+    if (start) {
+        char *excl = strchr(start, '!');
+        if (excl && strlen(excl) >= 5) {
+            // Verify that the 4 characters following '!' are valid hex digits.
+            int valid = 1;
+            for (int i = 1; i <= 4; i++) {
+                char c = excl[i];
+                if (!((c >= '0' && c <= '9') ||
+                      (c >= 'A' && c <= 'F') ||
+                      (c >= 'a' && c <= 'f'))) {
+                    valid = 0;
+                    break;
+                }
+            }
+            if (valid)
+                return 1;
+        }
+    }
+    return 0;
+}
+
+/**
+ * Extracts a complete telegram from the buffer.
+ * Returns a dynamically allocated string containing the telegram.
+ * Caller is responsible for freeing the returned string.
+ */
+char *extract_telegram() {
+    char *start = strchr(telegram_buffer, '/');
+    if (!start)
+        return NULL;
+    
+    char *excl = strchr(start, '!');
+    if (!excl || strlen(excl) < 5)
+        return NULL;  // Telegram not complete.
+    
+    // The telegram spans from the start up to and including the 4 hex digits after '!'
+    size_t telegram_length = (excl - start) + 5;
+    
+    char *telegram = malloc(telegram_length + 1);
+    if (!telegram)
+        return NULL;
+    
+    memcpy(telegram, start, telegram_length);
+    telegram[telegram_length] = '\0';
+    
+    // Remove the extracted telegram from the buffer.
+    size_t offset = start - telegram_buffer;
+    size_t remaining = buffer_index - offset - telegram_length;
+    memmove(telegram_buffer + offset, start + telegram_length, remaining);
+    buffer_index = offset + remaining;
+    telegram_buffer[buffer_index] = '\0';
+    
+    return telegram;
+}
+
 int main() {
     int serial_fd;
-    char buffer[BUFFER_SIZE];
     DSMRData data;
-
+    
     printf("Initializing GPIO...\n");
     gpio_init();
     
     printf("Opening serial port...\n");
-    serial_fd = serial_open();
+    serial_fd = serial_open(SERIAL_PORT);
     if (serial_fd == -1) {
-        fprintf(stderr, "Failed to open serial port\n");
+        fprintf(stderr, "Error: Failed to open serial port.\n");
         return EXIT_FAILURE;
     }
-
+    
     while (1) {
         gpio_set_request_high(); // Request new data
-        usleep(500000); // Wait for response
+        usleep(500000);          // Wait for response
         gpio_set_request_low();
-
-        int bytes_read = serial_read(serial_fd, buffer, sizeof(buffer) - 1);
-        if (bytes_read > 0) {
-            buffer[bytes_read] = '\0';
-            printf("Received data:\n%s\n", buffer);
-
-            if (parse_dsmr_message(buffer, &data) == 0) {
-                printf("Parsed Data:\n");
-                printf("Timestamp: %s\n", data.timestamp);
-                printf("Electricity Imported Total: %.3f kWh\n", data.electricity_imported_total);
-                printf("Electricity Exported Total: %.3f kWh\n", data.electricity_exported_total);
-                printf("Current Electricity Usage: %.3f kW\n", data.current_electricity_usage);
-                printf("Current Electricity Delivery: %.3f kW\n", data.current_electricity_delivery);
-                printf("Voltage L1: %.1f V\n", data.instantaneous_voltage_l1);
-                printf("Voltage L2: %.1f V\n", data.instantaneous_voltage_l2);
-                printf("Voltage L3: %.1f V\n", data.instantaneous_voltage_l3);
-                printf("Current L1: %.3f A\n", data.instantaneous_current_l1);
-                printf("Current L2: %.3f A\n", data.instantaneous_current_l2);
-                printf("Current L3: %.3f A\n", data.instantaneous_current_l3);
-                printf("Instantaneous Active Power L1 (Import): %.3f kW\n", data.instantaneous_active_power_l1_positive);
-                printf("Instantaneous Active Power L2 (Import): %.3f kW\n", data.instantaneous_active_power_l2_positive);
-                printf("Instantaneous Active Power L3 (Import): %.3f kW\n", data.instantaneous_active_power_l3_positive);
-                printf("Instantaneous Active Power L1 (Export): %.3f kW\n", data.instantaneous_active_power_l1_negative);
-                printf("Instantaneous Active Power L2 (Export): %.3f kW\n", data.instantaneous_active_power_l2_negative);
-                printf("Instantaneous Active Power L3 (Export): %.3f kW\n", data.instantaneous_active_power_l3_negative);
-                printf("Gas Equipment Identifier: %s\n", data.equipment_identifier_gas);
-                printf("Hourly Gas Meter Reading: %.3f m³\n", data.hourly_gas_meter_reading);
-            } else {
-                printf("Failed to parse DSMR message.\n");
+        
+        // Accumulate data until a complete telegram is available.
+        if (accumulate_telegram(serial_fd)) {
+            char *complete_telegram = extract_telegram();
+            if (complete_telegram) {
+                printf("Received complete DSMR telegram:\n%s\n", complete_telegram);
+                int result = parse_dsmr_message(complete_telegram, &data);
+                if (result == 0) {
+                    printf("Parsed DSMR Data:\n");
+                    printf("Timestamp: %s\n", data.timestamp);
+                    printf("Electricity Used (Tariff 1): %.3f kWh\n", data.electricity_used_tariff_1);
+                    // ... Print other fields as needed ...
+                } else {
+                    fprintf(stderr, "Error: Failed to parse DSMR message. Error Code: %d\n", result);
+                }
+                free(complete_telegram);
             }
         }
-        sleep(1); // Wait before requesting again
+        sleep(1);
     }
-
+    
     printf("Cleaning up...\n");
     serial_close(serial_fd);
     gpio_cleanup();

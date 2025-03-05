@@ -1,16 +1,8 @@
-/* dsmr_parser.h - DSMR message parsing for Raspberry Pi DSMR P1 reader */
-#ifndef DSMR_PARSER_H
-#define DSMR_PARSER_H
-
-#include <stdio.h>
-#include <stdint.h>
-#include <string.h>
-
-#define MAX_DSMR_MESSAGE_SIZE 2048
-
-// Structure to store parsed DSMR v5 data
 typedef struct {
     char timestamp[16];
+    char equipment_identifier[32];  // Electricity Meter ID
+    char equipment_identifier_gas[32];  // Gas Meter ID
+    int electricity_active_tariff;
     float electricity_imported_total;
     float electricity_exported_total;
     float electricity_used_tariff_1;
@@ -39,10 +31,7 @@ typedef struct {
     float instantaneous_active_power_l1_negative;
     float instantaneous_active_power_l2_negative;
     float instantaneous_active_power_l3_negative;
-    char equipment_identifier_gas[32];
+    char text_message[256];  // New field for text messages
+    int gas_meter_device_type;
     float hourly_gas_meter_reading;
 } DSMRData;
-
-int parse_dsmr_message(const char *raw_data, DSMRData *data);
-
-#endif
