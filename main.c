@@ -1,5 +1,6 @@
 #include "serial.h"
 #include "dsmr_parser.h"
+#include "mqtt_module.h"  // Include the MQTT module header
 #include "gpio_control.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,6 +83,12 @@ int main() {
         fprintf(stderr, "Error: Failed to open serial port.\n");
         return EXIT_FAILURE;
     }
+
+    /* Initialize the MQTT module */
+    if (mqtt_module_init() != 0) {
+        fprintf(stderr, "Error: Failed to initialize MQTT module.\n");
+        // Proceeding even if MQTT initialization fails; messages will remain queued.
+    }
     
     while (1) {
         gpio_set_request_high();
@@ -130,16 +137,23 @@ int main() {
                     printf("Gas Device Type: %d\n", data.gas_meter_device_type);
                     printf("Gas Reading: %.3f m3\n", data.hourly_gas_meter_reading);
                     printf("Text Message: %s\n", data.text_message);
+
+                    /* Enqueue the complete telegram to be sent via MQTT */
+                    mqtt_module_enqueue("dsmr/data", complete_telegram);
                 } else {
                     fprintf(stderr, "Error: Failed to parse DSMR message. Error Code: %d\n", result);
                 }
                 free(complete_telegram);
             }
         }
+
+        /* Process any queued MQTT messages */
+        mqtt_module_process_queue();
         sleep(1);
     }
     
     printf("Cleaning up...\n");
+    mqtt_module_cleanup();
     serial_close(serial_fd);
     gpio_cleanup();
     return EXIT_SUCCESS;
